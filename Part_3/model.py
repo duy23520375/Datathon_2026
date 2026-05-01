@@ -36,10 +36,10 @@ def get_tet_date(year):
 
 TET_DATES = {y: get_tet_date(y) for y in range(2012, 2025)}
 
-train_raw = pd.read_csv('../Data/sales.csv', parse_dates=['Date'])
+train_raw = pd.read_csv('sales.csv', parse_dates=['Date'])
 train_raw['year'] = train_raw['Date'].dt.year
-test_raw = pd.read_csv('../Data/sample_submission.csv', parse_dates=['Date'])
-promos = pd.read_csv('../Data/promotions.csv', parse_dates=['start_date', 'end_date'])
+test_raw = pd.read_csv('sample_submission.csv', parse_dates=['Date'])
+promos = pd.read_csv('promotions.csv', parse_dates=['start_date', 'end_date'])
 
 # --- 2. ANCHOR ---
 def get_anchor(tr, ts):
@@ -326,3 +326,103 @@ print(f"COGS    -> RMSE: {np.sqrt(mean_squared_error(cogs_val_true, cogs_val_pre
 final['Date'] = final['Date'].dt.strftime('%Y-%m-%d')
 final.to_csv('submission.csv', index=False)
 print(f"submission.csv generated. Mean Rev: {final['Revenue'].mean():.2f}")
+
+# --- 8. FAST INTERPRETABILITY + SAVE FIGURES ---
+import shap
+import matplotlib.pyplot as plt
+import os
+from sklearn.inspection import permutation_importance
+
+SAVE_DIR = "explainpicture"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+print(f"\nSaving plots to: {SAVE_DIR}/")
+
+def save_fig(name):
+    path = os.path.join(SAVE_DIR, name)
+    plt.tight_layout()
+    plt.savefig(path, dpi=120)
+    plt.close()
+    print(f"Saved: {path}")
+
+def fast_analysis(models, df, f_l, f_n, sc, target_name):
+    print(f"\n--- {target_name} ---")
+
+    X_l = df[f_l]
+    X_n = sc.transform(df[f_n])
+
+    for i, (mode, m) in enumerate(models):
+        model_tag = f"{target_name}_model{i+1}_{mode}"
+        print(f"\nModel {i+1} ({mode})")
+
+        # ===== LIGHTGBM =====
+        if mode in ['raw', 'log', 'sqrt']:
+
+            # --- Feature importance ---
+            fi = pd.DataFrame({
+                'feature': f_l,
+                'importance': m.feature_importances_
+            }).sort_values(by='importance', ascending=False)
+
+            print(fi.head(10))
+
+            plt.figure()
+            plt.title(model_tag + "_feature_importance")
+            plt.barh(fi['feature'][:15][::-1], fi['importance'][:15][::-1])
+            save_fig(model_tag + "_fi.png")
+
+            # --- SHAP (FAST) ---
+            explainer = shap.TreeExplainer(m)
+
+            # sample để nhanh
+            X_sample = X_l.sample(min(1000, len(X_l)), random_state=42)
+
+            shap_values = explainer.shap_values(X_sample)
+
+            # Summary plot
+            plt.figure()
+            shap.summary_plot(shap_values, X_sample, show=False)
+            save_fig(model_tag + "_shap_summary.png")
+
+            # Bar plot
+            plt.figure()
+            shap.summary_plot(shap_values, X_sample, plot_type="bar", show=False)
+            save_fig(model_tag + "_shap_bar.png")
+
+            # Dependence (top feature)
+            top_feat = np.array(f_l)[np.argsort(-np.abs(shap_values).mean(0))[0]]
+
+            plt.figure()
+            shap.dependence_plot(top_feat, shap_values, X_sample, show=False)
+            save_fig(model_tag + f"_depend_{top_feat}.png")
+
+        # ===== MLP =====
+        elif mode == 'mlp':
+            print("Permutation importance (fast for MLP)")
+
+            r = permutation_importance(
+                m,
+                X_n,
+                m.predict(X_n),
+                n_repeats=3,
+                random_state=42,
+                n_jobs=-1
+            )
+
+            fi = pd.DataFrame({
+                'feature': f_n,
+                'importance': r.importances_mean
+            }).sort_values(by='importance', ascending=False)
+
+            print(fi.head(10))
+
+            plt.figure()
+            plt.title(model_tag + "_mlp_importance")
+            plt.barh(fi['feature'][:15][::-1], fi['importance'][:15][::-1])
+            save_fig(model_tag + "_mlp_fi.png")
+
+# Run
+fast_analysis(mods_r, tr, fl_r, fn_r, scr, "Revenue")
+fast_analysis(mods_c, tr, fl_c, fn_c, scc, "COGS")
+
+print("\n=== ALL PLOTS SAVED ===")
