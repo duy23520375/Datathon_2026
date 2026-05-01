@@ -1,9 +1,5 @@
 """
-v67_rewritten.py: Exact Documentation Replica of v67_lag_ensemble.py
 ====================================================================
-This script is an exact logic replica of v67_lag_ensemble.py, 
-restoring all original feature names, seeds, and logic to ensure identical output.
-
 Features:
 - Time: year, month, day, dow, dom
 - Special: tet, yr, is_p
