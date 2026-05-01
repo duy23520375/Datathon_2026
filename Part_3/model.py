@@ -324,5 +324,5 @@ print(f"COGS    -> RMSE: {np.sqrt(mean_squared_error(cogs_val_true, cogs_val_pre
 
 # Export
 final['Date'] = final['Date'].dt.strftime('%Y-%m-%d')
-final.to_csv('final_submission.csv', index=False)
-print(f"final_submission.csv generated. Mean Rev: {final['Revenue'].mean():.2f}")
+final.to_csv('submission.csv', index=False)
+print(f"submission.csv generated. Mean Rev: {final['Revenue'].mean():.2f}")
