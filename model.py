@@ -1,5 +1,4 @@
 """
-====================================================================
 Features:
 - Time: year, month, day, dow, dom
 - Special: tet, yr, is_p
@@ -17,6 +16,7 @@ import lightgbm as lgb
 import random
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 from lunardate import LunarDate
 warnings.filterwarnings('ignore')
@@ -272,28 +272,57 @@ def train_target(df, target, lag_feats):
 mods_r, scr, fl_r, fn_r = train_target(tr, 'Revenue', lag_f_r)
 mods_c, scc, fl_c, fn_c = train_target(tr, 'COGS', lag_f_c)
 
+
+
 # --- 5. PREDICT ---
-gr = (GROWTH_FACTOR ** (ts['year']-2022)).values
 bv_r = train_raw[train_raw['year']==2022]['Revenue'].mean()
 bv_c = train_raw[train_raw['year']==2022]['COGS'].mean()
 
 def get_ensemble_pred(models, sc, df_ts, f_l, f_n, base_val):
     all_preds = []
     X_nn = sc.transform(df_ts[f_n])
+
     for mode, m in models:
-        if mode == 'mlp': p = m.predict(X_nn)
-        elif mode == 'raw': p = m.predict(df_ts[f_l])
-        elif mode == 'log': p = np.expm1(m.predict(df_ts[f_l]))
-        elif mode == 'sqrt': p = np.square(m.predict(df_ts[f_l]))
+        if mode == 'mlp':
+            p = m.predict(X_nn)
+        elif mode == 'raw':
+            p = m.predict(df_ts[f_l])
+        elif mode == 'log':
+            p = np.expm1(m.predict(df_ts[f_l]))
+        elif mode == 'sqrt':
+            p = np.square(m.predict(df_ts[f_l]))
         all_preds.append(p)
-    return np.mean(all_preds, axis=0) * base_val * gr
+
+    gr_local = (GROWTH_FACTOR ** (df_ts['year'] - 2022)).values
+    return np.mean(all_preds, axis=0) * base_val * gr_local
 
 rev = get_ensemble_pred(mods_r, scr, ts, fl_r, fn_r, bv_r)
 cogs = get_ensemble_pred(mods_c, scc, ts, fl_c, fn_c, bv_c)
 
+# --- 6. CALIBRATION ---
 final = test_raw[['Date']].copy(); final['Revenue'] = rev; final['COGS'] = cogs
 final['Revenue'] *= (TARGET_MEAN_R / final['Revenue'].mean())
 final['COGS'] *= (TARGET_MEAN_C / final['COGS'].mean())
+
+# --- 7. EVALUATION (VAL = 2022) ---
+val_mask = tr['year'] == 2022
+bv_r_val = train_raw[train_raw['year']==2022]['Revenue'].mean()
+bv_c_val = train_raw[train_raw['year']==2022]['COGS'].mean()
+gr_val = (GROWTH_FACTOR ** (tr.loc[val_mask, 'year'] - 2022)).values
+rev_val_pred = get_ensemble_pred(mods_r, scr, tr.loc[val_mask], fl_r, fn_r, bv_r_val)
+cogs_val_pred = get_ensemble_pred(mods_c, scc, tr.loc[val_mask], fl_c, fn_c, bv_c_val)
+rev_val_true = train_raw.loc[train_raw['year']==2022, 'Revenue'].values
+cogs_val_true = train_raw.loc[train_raw['year']==2022, 'COGS'].values
+print("\n--- VALIDATION (2022) ---")
+print(f"Revenue -> RMSE: {np.sqrt(mean_squared_error(rev_val_true, rev_val_pred)):.4f} | "
+      f"MAE: {mean_absolute_error(rev_val_true, rev_val_pred):.4f} | "
+      f"R2: {r2_score(rev_val_true, rev_val_pred):.4f}")
+
+print(f"COGS    -> RMSE: {np.sqrt(mean_squared_error(cogs_val_true, cogs_val_pred)):.4f} | "
+      f"MAE: {mean_absolute_error(cogs_val_true, cogs_val_pred):.4f} | "
+      f"R2: {r2_score(cogs_val_true, cogs_val_pred):.4f}")
+
+# Export
 final['Date'] = final['Date'].dt.strftime('%Y-%m-%d')
 final.to_csv('final_submission.csv', index=False)
-print(f"Done! final_submission.csv generated. Mean Rev: {final['Revenue'].mean():.2f}")
+print(f"final_submission.csv generated. Mean Rev: {final['Revenue'].mean():.2f}")
