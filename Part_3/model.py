@@ -36,10 +36,10 @@ def get_tet_date(year):
 
 TET_DATES = {y: get_tet_date(y) for y in range(2012, 2025)}
 
-train_raw = pd.read_csv('sales.csv', parse_dates=['Date'])
+train_raw = pd.read_csv('../Data/sales.csv', parse_dates=['Date'])
 train_raw['year'] = train_raw['Date'].dt.year
-test_raw = pd.read_csv('sample_submission.csv', parse_dates=['Date'])
-promos = pd.read_csv('promotions.csv', parse_dates=['start_date', 'end_date'])
+test_raw = pd.read_csv('../Data/sample_submission.csv', parse_dates=['Date'])
+promos = pd.read_csv('../Data/promotions.csv', parse_dates=['start_date', 'end_date'])
 
 # --- 2. ANCHOR ---
 def get_anchor(tr, ts):
