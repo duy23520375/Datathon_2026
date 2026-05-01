@@ -9,7 +9,6 @@ Features:
 - Lags: 364, 371, 728 (Normalized)
 
 Ensemble: 7 models (L2, Tweedie, Huber, Log, Sqrt, MLP1, MLP2)
-Anchor: 1.12 Ultra Growth
 """
 
 import pandas as pd
